@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="Recco — Lisbon recommendations from people who know.">
 <meta name="theme-color" content="#1f56a3">
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Lisbon">
+<link rel="apple-touch-icon" href="icon-180.png">
 <title>Miradouro · Lisbon</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9A%8B%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -163,6 +168,22 @@
   #fab-dice{bottom:146px;background:#7c3aed;color:#fff}
 
   footer{color:var(--muted);font-size:12.5px;text-align:center;padding:24px 16px 130px;line-height:1.6}
+
+  /* ── install banner ── */
+  #install-banner{display:none;align-items:center;gap:12px;padding:11px 16px;background:var(--azul);color:#fff}
+  .install-icon{width:38px;height:38px;border-radius:9px;background:#f5c200;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:22px}
+  .install-text{flex:1;min-width:0}
+  .install-text strong{display:block;font-size:14px;font-weight:600}
+  .install-text span{font-size:12px;opacity:.85}
+  .btn-install{background:#fff;color:var(--azul);border:none;padding:7px 15px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0}
+  .btn-install-x{background:none;border:none;color:rgba(255,255,255,.65);font-size:20px;cursor:pointer;padding:2px 4px;flex-shrink:0;line-height:1}
+
+  /* ── iOS install sheet ── */
+  .ios-step{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+  .ios-step:last-child{border-bottom:none}
+  .ios-step-num{width:26px;height:26px;border-radius:50%;background:var(--azul);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+  .ios-step p{font-size:14px;line-height:1.5;margin:0}
+  .ios-step kbd{background:var(--line);border-radius:5px;padding:1px 7px;font-family:inherit;font-size:13px;font-weight:600}
 </style>
 </head>
 <body>
@@ -171,6 +192,16 @@
   <h1>Lisbon</h1>
   <div class="sub">recommended by people who know</div>
 </header>
+
+<div id="install-banner">
+  <div class="install-icon">🚋</div>
+  <div class="install-text">
+    <strong>LisbonRecs</strong>
+    <span>Add to your home screen</span>
+  </div>
+  <button class="btn-install" onclick="installApp()">Add</button>
+  <button class="btn-install-x" onclick="dismissInstall()" aria-label="Dismiss">✕</button>
+</div>
 
 <div class="toolbar">
   <div class="toolbar-inner">
@@ -225,6 +256,28 @@
       <button class="btn-primary" id="btn-submit" disabled>Add to Recco</button>
     </div>
     <div class="status-msg" id="status-msg"></div>
+  </div>
+</div>
+
+<!-- iOS Add to Home Screen instructions -->
+<div class="overlay" id="ios-install-overlay">
+  <div class="sheet">
+    <h2>Add to Home Screen</h2>
+    <div class="ios-step">
+      <div class="ios-step-num">1</div>
+      <p>Tap the <kbd>Share</kbd> button — the box with an arrow pointing up — at the bottom of Safari</p>
+    </div>
+    <div class="ios-step">
+      <div class="ios-step-num">2</div>
+      <p>Scroll down and tap <kbd>Add to Home Screen</kbd></p>
+    </div>
+    <div class="ios-step">
+      <div class="ios-step-num">3</div>
+      <p>Tap <kbd>Add</kbd> in the top right — done!</p>
+    </div>
+    <div class="sheet-actions" style="margin-top:16px">
+      <button class="btn-primary" onclick="document.getElementById('ios-install-overlay').classList.remove('open')">Got it</button>
+    </div>
   </div>
 </div>
 
@@ -744,6 +797,44 @@ const DEMO_RECS = [
    ══════════════════════════════════════════ */
 buildControls();
 loadRecs();
+
+/* ══════════════════════════════════════════
+   PWA INSTALL
+   ══════════════════════════════════════════ */
+let deferredPrompt = null;
+const installBanner = document.getElementById('install-banner');
+const isStandalone = () => window.matchMedia('(display-mode:standalone)').matches || navigator.standalone === true;
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  if(!isStandalone() && !sessionStorage.getItem('install-dismissed')) installBanner.style.display='flex';
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredPrompt = null;
+  installBanner.style.display = 'none';
+});
+
+// Show banner on iOS automatically (no beforeinstallprompt on Safari)
+if(isIOS && !isStandalone() && !sessionStorage.getItem('install-dismissed')) {
+  installBanner.style.display = 'flex';
+}
+
+function installApp(){
+  if(deferredPrompt){
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(()=>{ deferredPrompt=null; installBanner.style.display='none'; });
+  } else {
+    document.getElementById('ios-install-overlay').classList.add('open');
+  }
+}
+
+function dismissInstall(){
+  installBanner.style.display = 'none';
+  sessionStorage.setItem('install-dismissed','1');
+}
 </script>
 </body>
 </html>
