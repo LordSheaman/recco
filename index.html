@@ -180,16 +180,6 @@
     <label>Your note <span style="font-weight:400;color:var(--muted)">(optional — your personal tip)</span></label>
     <textarea id="inp-note" placeholder="e.g. Go for sunset, the rooftop seats are worth the wait…"></textarea>
 
-    <label>Neighbourhood</label>
-    <select id="inp-area">
-      <option value="">— pick one —</option>
-      <option>Alfama</option><option>Bairro Alto</option><option>Belém</option>
-      <option>Cais do Sodré</option><option>Cascais</option><option>Castelo</option>
-      <option>Chiado</option><option>Graça</option><option>Intendente</option>
-      <option>Mouraria</option><option>Príncipe Real</option><option>Rossio</option>
-      <option>Santa Catarina</option><option>Sintra</option><option>Other</option>
-    </select>
-
     <label>Category</label>
     <div class="row-cats" id="cat-btns"></div>
 
@@ -436,7 +426,6 @@ function resetSheet(){
   $('#inp-url').value='';
   $('#inp-name').value='';
   $('#inp-note').value='';
-  $('#inp-area').value='';
   $('#inp-by').value='';
   $('#preview-box').classList.remove('show');
   $('#preview-img').style.display='none';
@@ -447,20 +436,53 @@ function resetSheet(){
   fetchedMeta={};
 }
 
-// URL fetch & Microlink enrichment
+// URL fetch & enrichment
 let fetchedMeta={};
 let urlTimer=null;
 $('#inp-url').addEventListener('input',e=>{
   clearTimeout(urlTimer);
   const val=e.target.value.trim();
-  if(!val){ $('#preview-box').classList.remove('show'); return; }
-  urlTimer=setTimeout(()=>fetchMeta(val),800);
+  if(!val){ $('#preview-box').classList.remove('show'); fetchedMeta={}; return; }
+  urlTimer=setTimeout(()=>fetchMeta(val),700);
 });
+
+function parseGoogleMapsUrl(url){
+  // Extract coordinates from /@LAT,LNG
+  const coord = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  // Extract place name from /place/NAME or /search/NAME
+  const place = url.match(/\/maps\/(?:place|search)\/([^/@?]+)/);
+  if(!coord) return null;
+  let name = '';
+  if(place){
+    name = decodeURIComponent(place[1].replace(/\+/g,' '))
+      .replace(/[\s,+]+lisbon.*/i,'').trim();
+    name = name.split(/\s+/).map(w=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(' ');
+  }
+  return { name, lat:parseFloat(coord[1]), lng:parseFloat(coord[2]), isGoogleMaps:true };
+}
 
 async function fetchMeta(url){
   try{ new URL(url); }catch(e){ return; }
+
+  // Google Maps — extract coords & name directly, no Microlink needed
+  const gmaps = parseGoogleMapsUrl(url);
+  if(gmaps){
+    fetchedMeta = { name:gmaps.name, desc:'', image:'', lat:gmaps.lat, lng:gmaps.lng };
+    $('#preview-box').classList.add('show');
+    $('#preview-loading').style.display='none';
+    $('#preview-name').textContent = gmaps.name || 'Place found on Google Maps';
+    $('#preview-desc').textContent = `📍 ${gmaps.lat.toFixed(5)}, ${gmaps.lng.toFixed(5)} — coordinates extracted`;
+    $('#preview-body').style.display='block';
+    $('#preview-img').style.display='none';
+    if(!$('#inp-name').value && gmaps.name) $('#inp-name').value=gmaps.name;
+    validateForm();
+    return;
+  }
+
+  // Everything else — try Microlink
   $('#preview-box').classList.add('show');
   $('#preview-loading').style.display='block';
+  $('#preview-loading').textContent='Fetching details…';
   $('#preview-img').style.display='none';
   $('#preview-body').style.display='none';
   try{
@@ -502,17 +524,15 @@ async function geocode(name, area){
 
 function validateForm(){
   const name=$('#inp-name').value.trim();
-  const area=$('#inp-area').value;
-  $('#btn-submit').disabled = !(name && area);
+  $('#btn-submit').disabled = !name;
 }
-['#inp-name','#inp-area','#inp-by'].forEach(sel=>$(sel).addEventListener('input',validateForm));
+['#inp-name','#inp-by'].forEach(sel=>$(sel).addEventListener('input',validateForm));
 
 $('#btn-submit').onclick=submitRec;
 
 async function submitRec(){
   if(!isConfigured){ status('err','Supabase not configured yet — paste your keys in the HTML.'); return; }
   const name=$('#inp-name').value.trim();
-  const area=$('#inp-area').value;
   const note=$('#inp-note').value.trim();
   const by=$('#inp-by').value.trim();
   const url=$('#inp-url').value.trim();
@@ -521,13 +541,15 @@ async function submitRec(){
   $('#btn-submit').textContent='Adding…';
   status('','');
 
-  const coords = await geocode(name, area);
+  const coords = (fetchedMeta.lat && fetchedMeta.lng)
+    ? {lat:fetchedMeta.lat, lng:fetchedMeta.lng}
+    : await geocode(name, area);
 
   const row={
     name,
     url: url||null,
     cat: selCat,
-    area,
+    area: null,
     note: note||null,
     image_url: fetchedMeta.image||null,
     lat: coords?.lat||null,
