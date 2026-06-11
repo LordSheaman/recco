@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Recco — Lisbon recommendations from people who know.">
+<meta name="theme-color" content="#1f56a3">
+<title>Recco · Lisbon</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9F%A3%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{
+    --bg:#faf7f2; --bgt:rgba(250,247,242,.92);
+    --card:#fff; --ink:#1c2030; --muted:#6b7280;
+    --line:#e5dfd5; --azul:#1f56a3; --terra:#c0563b;
+    --green:#16a34a; --overlay:rgba(0,0,0,.55);
+    --radius:14px;
+  }
+  @media(prefers-color-scheme:dark){
+    :root{
+      --bg:#0f1117; --bgt:rgba(15,17,23,.92);
+      --card:#1a1f2e; --ink:#e8e6e1; --muted:#9ca3af;
+      --line:#252b3a; --azul:#3b72d4; --terra:#d4694b;
+    }
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+
+  /* ── header ── */
+  header{
+    background:var(--azul);
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cg fill='none' stroke='%23fff' stroke-opacity='.1' stroke-width='1.5'%3E%3Crect x='20' y='20' width='40' height='40'/%3E%3Crect x='20' y='20' width='40' height='40' transform='rotate(45 40 40)'/%3E%3Ccircle cx='40' cy='40' r='8'/%3E%3C/g%3E%3C/svg%3E");
+    color:#fff;padding:32px 20px 24px;text-align:center;
+  }
+  header h1{font-family:'Fraunces',Georgia,serif;font-weight:700;font-size:clamp(34px,7vw,52px);letter-spacing:.5px}
+  header .sub{opacity:.85;font-size:15px;margin-top:5px}
+
+  /* ── toolbar ── */
+  .toolbar{position:sticky;top:0;z-index:900;background:var(--bgt);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:10px 14px 8px}
+  .toolbar-inner{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
+  .row1{display:flex;gap:8px}
+  #q{flex:1;min-width:0;padding:9px 13px;font-size:15px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
+  #area{padding:9px 8px;font-size:14px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
+  #chips{display:flex;gap:7px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+  #chips::-webkit-scrollbar{display:none}
+  .chip{white-space:nowrap;padding:6px 13px;font-size:13.5px;cursor:pointer;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink);transition:all .15s}
+  .chip.active{background:var(--azul);border-color:var(--azul);color:#fff}
+
+  /* ── main ── */
+  main{max-width:1100px;margin:0 auto;padding:0 14px 120px}
+  .stats{color:var(--muted);font-size:13px;margin:12px 0 8px}
+
+  /* ── cards grid ── */
+  #cards{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+  .empty{color:var(--muted);text-align:center;padding:64px 0;grid-column:1/-1;font-size:15px}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column}
+  .card-img{width:100%;height:160px;object-fit:cover;background:var(--line);display:block}
+  .card-img-placeholder{width:100%;height:120px;display:flex;align-items:center;justify-content:center;font-size:42px;background:var(--line)}
+  .card-body{padding:14px;flex:1;display:flex;flex-direction:column;gap:6px}
+  .card-top{display:flex;align-items:baseline;gap:8px}
+  .cat-badge{font-size:17px;flex-shrink:0}
+  .card h3{font-size:16.5px;font-weight:650;flex:1;line-height:1.25}
+  .card-meta{color:var(--muted);font-size:13px}
+  .card-note{font-size:14px;line-height:1.45;flex:1}
+  .card-url{display:inline-flex;align-items:center;gap:4px;font-size:13px;color:var(--azul);text-decoration:none;word-break:break-all}
+  .card-url:hover{text-decoration:underline}
+  .card-foot{display:flex;justify-content:space-between;align-items:center;padding-top:4px}
+  .card-via{color:var(--muted);font-size:12.5px;font-style:italic}
+  .map-link{color:var(--azul);font-size:13px;text-decoration:none}
+  .map-link:hover{text-decoration:underline}
+
+  /* ── map ── */
+  #mapwrap{display:none;margin-top:12px}
+  body.map-mode #mapwrap{display:block}
+  body.map-mode #cards,.body.map-mode .stats{display:none}
+  #map{height:calc(100vh - 220px);min-height:440px;border-radius:var(--radius)}
+  .leaflet-popup-content b{display:block;margin-bottom:4px}
+  .leaflet-popup-content img{width:100%;border-radius:6px;margin-top:6px;max-height:120px;object-fit:cover}
+
+  /* ── add rec modal ── */
+  .overlay{position:fixed;inset:0;background:var(--overlay);z-index:1100;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .25s}
+  .overlay.open{opacity:1;pointer-events:all}
+  .sheet{
+    background:var(--card);border-radius:20px 20px 0 0;width:100%;max-width:600px;
+    padding:24px 20px 36px;transform:translateY(60px);transition:transform .28s cubic-bezier(.22,1,.36,1);
+    max-height:92vh;overflow-y:auto;
+  }
+  .overlay.open .sheet{transform:translateY(0)}
+  .sheet h2{font-size:20px;font-weight:700;margin-bottom:16px}
+  .sheet label{display:block;font-size:13.5px;font-weight:600;margin-bottom:5px;margin-top:14px;color:var(--ink)}
+  .sheet label:first-of-type{margin-top:0}
+  .sheet input,.sheet select,.sheet textarea{
+    width:100%;padding:10px 13px;font-size:15px;
+    border:1px solid var(--line);border-radius:10px;
+    background:var(--bg);color:var(--ink);font-family:inherit;
+  }
+  .sheet textarea{resize:vertical;min-height:72px}
+  .preview-box{
+    display:none;border:1px solid var(--line);border-radius:10px;
+    overflow:hidden;margin-top:10px;
+  }
+  .preview-box.show{display:block}
+  .preview-box img{width:100%;max-height:180px;object-fit:cover;display:block}
+  .preview-body{padding:10px 12px}
+  .preview-body strong{font-size:15px}
+  .preview-body p{font-size:13px;color:var(--muted);margin-top:3px}
+  .preview-loading{padding:20px;text-align:center;color:var(--muted);font-size:14px}
+  .row-cats{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+  .cat-btn{padding:7px 13px;font-size:13px;border:1px solid var(--line);border-radius:999px;cursor:pointer;background:var(--card);color:var(--ink)}
+  .cat-btn.sel{background:var(--azul);border-color:var(--azul);color:#fff}
+  .sheet-actions{display:flex;gap:10px;margin-top:20px}
+  .btn-primary{flex:1;padding:13px;font-size:15px;font-weight:600;border:none;border-radius:12px;background:var(--azul);color:#fff;cursor:pointer}
+  .btn-primary:disabled{opacity:.55;cursor:not-allowed}
+  .btn-ghost{padding:13px 18px;font-size:15px;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--ink);cursor:pointer}
+  .status-msg{font-size:14px;margin-top:10px;padding:10px 13px;border-radius:8px;display:none}
+  .status-msg.ok{display:block;background:#dcfce7;color:#15803d}
+  .status-msg.err{display:block;background:#fee2e2;color:#b91c1c}
+  @media(prefers-color-scheme:dark){
+    .status-msg.ok{background:#14532d;color:#86efac}
+    .status-msg.err{background:#450a0a;color:#fca5a5}
+  }
+
+  /* ── FABs ── */
+  .fab{position:fixed;right:18px;z-index:1000;width:54px;height:54px;border-radius:50%;border:none;cursor:pointer;font-size:22px;box-shadow:0 4px 16px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;transition:transform .15s}
+  .fab:active{transform:scale(.9)}
+  #fab-add{bottom:18px;background:var(--terra);color:#fff}
+  #fab-map{bottom:82px;background:var(--azul);color:#fff}
+  #fab-dice{bottom:146px;background:#7c3aed;color:#fff}
+
+  footer{color:var(--muted);font-size:12.5px;text-align:center;padding:24px 16px 130px;line-height:1.6}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Recco</h1>
+  <div class="sub">Lisbon · recommended by people who know</div>
+</header>
+
+<div class="toolbar">
+  <div class="toolbar-inner">
+    <div class="row1">
+      <input id="q" type="search" placeholder="Search places, areas, people…" aria-label="Search">
+      <select id="area" aria-label="Area"><option value="all">All areas</option></select>
+    </div>
+    <div id="chips"></div>
+  </div>
+</div>
+
+<main>
+  <div id="stats" class="stats"></div>
+  <div id="cards"></div>
+  <div id="mapwrap"><div id="map"></div></div>
+</main>
+
+<!-- Add rec sheet -->
+<div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-label="Add a recommendation">
+  <div class="sheet">
+    <h2>Add a rec 📍</h2>
+
+    <label>Instagram or website link</label>
+    <input id="inp-url" type="url" placeholder="https://…" autocomplete="off">
+    <div class="preview-box" id="preview-box">
+      <div class="preview-loading" id="preview-loading">Fetching details…</div>
+      <img id="preview-img" src="" alt="" style="display:none">
+      <div class="preview-body" id="preview-body" style="display:none">
+        <strong id="preview-name"></strong>
+        <p id="preview-desc"></p>
+      </div>
+    </div>
+
+    <label>Name (if not auto-filled)</label>
+    <input id="inp-name" type="text" placeholder="Bar name">
+
+    <label>Your note <span style="font-weight:400;color:var(--muted)">(optional — your personal tip)</span></label>
+    <textarea id="inp-note" placeholder="e.g. Go for sunset, the rooftop seats are worth the wait…"></textarea>
+
+    <label>Neighbourhood</label>
+    <select id="inp-area">
+      <option value="">— pick one —</option>
+      <option>Alfama</option><option>Bairro Alto</option><option>Belém</option>
+      <option>Cais do Sodré</option><option>Cascais</option><option>Castelo</option>
+      <option>Chiado</option><option>Graça</option><option>Intendente</option>
+      <option>Mouraria</option><option>Príncipe Real</option><option>Rossio</option>
+      <option>Santa Catarina</option><option>Sintra</option><option>Other</option>
+    </select>
+
+    <label>Category</label>
+    <div class="row-cats" id="cat-btns"></div>
+
+    <label>Your name <span style="font-weight:400;color:var(--muted)">(so people know who to thank)</span></label>
+    <input id="inp-by" type="text" placeholder="e.g. Tom">
+
+    <div class="sheet-actions">
+      <button class="btn-ghost" id="btn-cancel">Cancel</button>
+      <button class="btn-primary" id="btn-submit" disabled>Add to Recco</button>
+    </div>
+    <div class="status-msg" id="status-msg"></div>
+  </div>
+</div>
+
+<button class="fab" id="fab-dice" title="Surprise me" aria-label="Random pick">🎲</button>
+<button class="fab" id="fab-map" title="Map / list" aria-label="Toggle map">🗺️</button>
+<button class="fab" id="fab-add" title="Add a rec" aria-label="Add recommendation">＋</button>
+
+<footer>
+  Recco · Lisbon &nbsp;·&nbsp; Map © OpenStreetMap &nbsp;·&nbsp; Tap ＋ to add a rec
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* ══════════════════════════════════════════
+   CONFIG — paste your Supabase keys here
+   ══════════════════════════════════════════ */
+const SUPABASE_URL  = 'https://bvmokmwbqelurhdswrlz.supabase.co';
+const SUPABASE_ANON = 'sb_publishable_bCFeVOexm_anBTnvZMvwEA_NmAjHCcZ';
+
+/* ══════════════════════════════════════════
+   CATEGORIES
+   ══════════════════════════════════════════ */
+const CATS = {
+  eat:    {label:'Eat',              emoji:'🍽️'},
+  drink:  {label:'Drink',            emoji:'🍸'},
+  coffee: {label:'Coffee & pastéis', emoji:'☕'},
+  see:    {label:'See & do',         emoji:'🏛️'},
+  trip:   {label:'Day trip',         emoji:'🚆'},
+  shop:   {label:'Shop',             emoji:'🛍️'},
+};
+
+/* ══════════════════════════════════════════
+   HELPERS
+   ══════════════════════════════════════════ */
+const $  = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ══════════════════════════════════════════
+   SUPABASE CLIENT (minimal, no SDK needed)
+   ══════════════════════════════════════════ */
+const sb = {
+  async select(){
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/recs?select=*&order=created_at.desc`,{
+      headers:{'apikey':SUPABASE_ANON,'Authorization':`Bearer ${SUPABASE_ANON}`}
+    });
+    if(!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+  async insert(row){
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/recs`,{
+      method:'POST',
+      headers:{'apikey':SUPABASE_ANON,'Authorization':`Bearer ${SUPABASE_ANON}`,'Content-Type':'application/json','Prefer':'return=representation'},
+      body:JSON.stringify(row)
+    });
+    if(!r.ok) throw new Error(await r.text());
+    return r.json();
+  }
+};
+
+/* ══════════════════════════════════════════
+   STATE
+   ══════════════════════════════════════════ */
+let allRecs = [];
+let filtered = [];
+let mapMode  = false;
+const filterState = {q:'', cat:'all', area:'all'};
+
+/* ══════════════════════════════════════════
+   LOAD DATA
+   ══════════════════════════════════════════ */
+const isConfigured = SUPABASE_URL !== 'PASTE_SUPABASE_URL_HERE';
+
+async function loadRecs(){
+  if(!isConfigured){
+    allRecs = DEMO_RECS;
+    render();
+    return;
+  }
+  try{
+    allRecs = await sb.select();
+    render();
+  }catch(e){
+    console.error('Supabase load error:',e);
+    allRecs = [];
+    render();
+  }
+}
+
+/* ══════════════════════════════════════════
+   FILTER CONTROLS
+   ══════════════════════════════════════════ */
+function buildControls(){
+  const chips = $('#chips');
+  [['all',{label:'All',emoji:'✨'}], ...Object.entries(CATS)].forEach(([key,c])=>{
+    const b = document.createElement('button');
+    b.className='chip'; b.dataset.cat=key;
+    b.textContent=`${c.emoji} ${c.label}`;
+    b.onclick=()=>{filterState.cat=key;render();};
+    chips.appendChild(b);
+  });
+}
+
+$('#q').oninput = e=>{ filterState.q=e.target.value.trim(); render(); };
+$('#area').onchange = e=>{ filterState.area=e.target.value; render(); };
+
+/* ══════════════════════════════════════════
+   RENDER
+   ══════════════════════════════════════════ */
+function applyFilters(){
+  const q = filterState.q.toLowerCase();
+  const areas = [...new Set(allRecs.map(r=>r.area).filter(Boolean))].sort();
+
+  // Rebuild area dropdown
+  const areaSel = $('#area');
+  const cur = areaSel.value;
+  areaSel.innerHTML = '<option value="all">All areas</option>';
+  areas.forEach(a=>{ const o=document.createElement('option'); o.value=o.textContent=a; areaSel.appendChild(o); });
+  areaSel.value = areas.includes(cur) ? cur : 'all';
+
+  filtered = allRecs.filter(p=>
+    (filterState.cat==='all' || p.cat===filterState.cat) &&
+    (filterState.area==='all' || p.area===filterState.area) &&
+    (!q || [p.name,p.area,p.note,p.submitted_by,p.cat].join(' ').toLowerCase().includes(q))
+  );
+}
+
+function cardHTML(p){
+  const c = CATS[p.cat] || {emoji:'📍',label:p.cat||'Other'};
+  const maps = p.lat
+    ? `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((p.name||'')+', Lisbon')}`;
+  return `<article class="card">
+    ${p.image_url
+      ? `<img class="card-img" src="${esc(p.image_url)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+      : `<div class="card-img-placeholder">${c.emoji}</div>`}
+    <div class="card-body">
+      <div class="card-top">
+        <span class="cat-badge">${c.emoji}</span>
+        <h3>${esc(p.name)}</h3>
+      </div>
+      <div class="card-meta">${esc(p.area||'')}${p.area&&c.label?' · ':''}${esc(c.label)}</div>
+      ${p.note ? `<p class="card-note">${esc(p.note)}</p>` : ''}
+      ${p.url  ? `<a class="card-url" href="${esc(p.url)}" target="_blank" rel="noopener">🔗 ${esc(new URL(p.url).hostname)}</a>` : ''}
+      <div class="card-foot">
+        <span class="card-via">${p.submitted_by ? `via ${esc(p.submitted_by)}` : ''}</span>
+        <a class="map-link" href="${maps}" target="_blank" rel="noopener">map ↗</a>
+      </div>
+    </div>
+  </article>`;
+}
+
+function render(){
+  applyFilters();
+  $$('.chip').forEach(b=>b.classList.toggle('active',b.dataset.cat===filterState.cat));
+  $('#stats').textContent = `${filtered.length} ${filtered.length===1?'place':'places'}`;
+  $('#cards').innerHTML = filtered.length
+    ? filtered.map(cardHTML).join('')
+    : `<div class="empty">No recs here yet${filterState.q||filterState.cat!=='all'?' — try clearing filters':' — add the first one!'}.</div>`;
+  if(mapMode) renderMap(filtered);
+}
+
+/* ══════════════════════════════════════════
+   MAP
+   ══════════════════════════════════════════ */
+let map, markerLayer;
+function ensureMap(){
+  if(map) return;
+  map = L.map('map');
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors',maxZoom:19}).addTo(map);
+  markerLayer = L.layerGroup().addTo(map);
+}
+function renderMap(list){
+  ensureMap();
+  markerLayer.clearLayers();
+  const pts=[];
+  list.forEach(p=>{
+    if(p.lat==null||p.lng==null) return;
+    const c=CATS[p.cat]||{emoji:'📍'};
+    const icon=L.divIcon({className:'',html:`<div style="font-size:24px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))">${c.emoji}</div>`,iconSize:[32,32],iconAnchor:[16,16]});
+    const popup=`<b>${esc(p.name)}</b>${p.area?`<br><small>${esc(p.area)}</small>`:''}${p.note?`<br>${esc(p.note)}`:''}${p.image_url?`<br><img src="${esc(p.image_url)}" alt="">`:''}${p.submitted_by?`<br><i>via ${esc(p.submitted_by)}</i>`:''}`;
+    L.marker([p.lat,p.lng],{icon}).addTo(markerLayer).bindPopup(popup);
+    pts.push([p.lat,p.lng]);
+  });
+  if(pts.length) map.fitBounds(pts,{padding:[40,40],maxZoom:15});
+  setTimeout(()=>map.invalidateSize(),80);
+}
+
+const fabMap=$('#fab-map');
+function toggleMap(to){
+  mapMode = to===undefined?!mapMode:to;
+  document.body.classList.toggle('map-mode',mapMode);
+  fabMap.textContent=mapMode?'☰':'🗺️';
+  if(mapMode) renderMap(filtered);
+}
+fabMap.onclick=()=>toggleMap();
+
+/* ── Surprise me ── */
+$('#fab-dice').onclick=()=>{
+  if(!filtered.length) return;
+  if(mapMode) toggleMap(false);
+  const idx=Math.floor(Math.random()*filtered.length);
+  const cards=$$('.card');
+  const el=cards[idx];
+  if(!el) return;
+  el.scrollIntoView({behavior:'smooth',block:'center'});
+};
+
+/* ══════════════════════════════════════════
+   ADD REC SHEET
+   ══════════════════════════════════════════ */
+// Build category buttons
+const catBtns=$('#cat-btns');
+let selCat='drink';
+Object.entries(CATS).forEach(([key,c])=>{
+  const b=document.createElement('button');
+  b.type='button'; b.className='cat-btn'+(key===selCat?' sel':'');
+  b.dataset.cat=key; b.textContent=`${c.emoji} ${c.label}`;
+  b.onclick=()=>{ selCat=key; $$('.cat-btn').forEach(x=>x.classList.toggle('sel',x.dataset.cat===key)); validateForm(); };
+  catBtns.appendChild(b);
+});
+
+const overlay=$('#overlay');
+$('#fab-add').onclick=()=>overlay.classList.add('open');
+$('#btn-cancel').onclick=closeSheet;
+overlay.addEventListener('click',e=>{ if(e.target===overlay) closeSheet(); });
+
+function closeSheet(){
+  overlay.classList.remove('open');
+  resetSheet();
+}
+function resetSheet(){
+  $('#inp-url').value='';
+  $('#inp-name').value='';
+  $('#inp-note').value='';
+  $('#inp-area').value='';
+  $('#inp-by').value='';
+  $('#preview-box').classList.remove('show');
+  $('#preview-img').style.display='none';
+  $('#preview-body').style.display='none';
+  $('#preview-loading').style.display='block';
+  status('','');
+  validateForm();
+  fetchedMeta={};
+}
+
+// URL fetch & Microlink enrichment
+let fetchedMeta={};
+let urlTimer=null;
+$('#inp-url').addEventListener('input',e=>{
+  clearTimeout(urlTimer);
+  const val=e.target.value.trim();
+  if(!val){ $('#preview-box').classList.remove('show'); return; }
+  urlTimer=setTimeout(()=>fetchMeta(val),800);
+});
+
+async function fetchMeta(url){
+  try{ new URL(url); }catch(e){ return; }
+  $('#preview-box').classList.add('show');
+  $('#preview-loading').style.display='block';
+  $('#preview-img').style.display='none';
+  $('#preview-body').style.display='none';
+  try{
+    const r = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}&palette=false`);
+    const d = await r.json();
+    if(d.status!=='success') throw new Error('no data');
+    fetchedMeta = {
+      name: d.data?.title||'',
+      desc: d.data?.description||'',
+      image: d.data?.image?.url||d.data?.logo?.url||'',
+    };
+    if(fetchedMeta.image){
+      $('#preview-img').src=fetchedMeta.image;
+      $('#preview-img').style.display='block';
+    }
+    $('#preview-name').textContent=fetchedMeta.name;
+    $('#preview-desc').textContent=fetchedMeta.desc;
+    $('#preview-body').style.display='block';
+    $('#preview-loading').style.display='none';
+    if(!$('#inp-name').value && fetchedMeta.name) $('#inp-name').value=fetchedMeta.name;
+    validateForm();
+  }catch(e){
+    $('#preview-loading').textContent='Could not fetch details — fill in the name below.';
+  }
+}
+
+// Geocode via Nominatim
+async function geocode(name, area){
+  const q = `${name}${area?', '+area:''}, Lisbon, Portugal`;
+  try{
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`,{
+      headers:{'User-Agent':'Recco-Lisbon-App/1.0'}
+    });
+    const d = await r.json();
+    if(d.length) return {lat:parseFloat(d[0].lat),lng:parseFloat(d[0].lon)};
+  }catch(e){}
+  return null;
+}
+
+function validateForm(){
+  const name=$('#inp-name').value.trim();
+  const area=$('#inp-area').value;
+  $('#btn-submit').disabled = !(name && area);
+}
+['#inp-name','#inp-area','#inp-by'].forEach(sel=>$(sel).addEventListener('input',validateForm));
+
+$('#btn-submit').onclick=submitRec;
+
+async function submitRec(){
+  if(!isConfigured){ status('err','Supabase not configured yet — paste your keys in the HTML.'); return; }
+  const name=$('#inp-name').value.trim();
+  const area=$('#inp-area').value;
+  const note=$('#inp-note').value.trim();
+  const by=$('#inp-by').value.trim();
+  const url=$('#inp-url').value.trim();
+
+  $('#btn-submit').disabled=true;
+  $('#btn-submit').textContent='Adding…';
+  status('','');
+
+  const coords = await geocode(name, area);
+
+  const row={
+    name,
+    url: url||null,
+    cat: selCat,
+    area,
+    note: note||null,
+    image_url: fetchedMeta.image||null,
+    lat: coords?.lat||null,
+    lng: coords?.lng||null,
+    submitted_by: by||null,
+  };
+
+  try{
+    const [inserted] = await sb.insert(row);
+    allRecs = [inserted, ...allRecs];
+    render();
+    status('ok',`✓ "${name}" added to Recco!`);
+    setTimeout(closeSheet, 1800);
+  }catch(e){
+    status('err','Something went wrong — try again.');
+    console.error(e);
+  }finally{
+    $('#btn-submit').disabled=false;
+    $('#btn-submit').textContent='Add to Recco';
+    validateForm();
+  }
+}
+
+function status(type,msg){
+  const el=$('#status-msg');
+  el.className='status-msg'+(type?' '+type:'');
+  el.textContent=msg;
+}
+
+/* ══════════════════════════════════════════
+   DEMO DATA (shown before Supabase is set up)
+   ══════════════════════════════════════════ */
+const DEMO_RECS = [
+  {id:'d1',name:'Park',cat:'drink',area:'Bairro Alto',note:'Rooftop bar on a car park — best sunset in Lisbon.',image_url:'',url:'',submitted_by:'Megan',lat:38.7110,lng:-9.1471,created_at:''},
+  {id:'d2',name:'Cervejaria Ramiro',cat:'eat',area:'Intendente',note:'The seafood institution. Garlic prawns, percebes if brave, prego to finish.',image_url:'',url:'',submitted_by:'Rita',lat:38.7202,lng:-9.1356,created_at:''},
+  {id:'d3',name:'Manteigaria',cat:'coffee',area:'Chiado',note:'Best natas in Lisbon — a bell rings when a fresh tray comes out.',image_url:'',url:'',submitted_by:'Rita',lat:38.7106,lng:-9.1421,created_at:''},
+  {id:'d4',name:'Ponto Final',cat:'eat',area:'Cacilhas',note:'Yellow tables on the quay across the Tagus. Ferry from Cais do Sodré.',image_url:'',url:'',submitted_by:'Tom',lat:38.6873,lng:-9.1539,created_at:''},
+  {id:'d5',name:'Sintra',cat:'trip',area:'Sintra',note:'Fairy-tale palaces in the hills — 40 min by train from Rossio.',image_url:'',url:'',submitted_by:'',lat:38.7976,lng:-9.3906,created_at:''},
+];
+
+/* ══════════════════════════════════════════
+   INIT
+   ══════════════════════════════════════════ */
+buildControls();
+loadRecs();
+</script>
+</body>
+</html>
