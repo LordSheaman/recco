@@ -366,8 +366,8 @@ function lazyLoadImages(){
     const id = card.dataset.id;
     const url = card.dataset.url;
     if(!url) return;
-    // Skip Google Maps links — they don't return useful photos
-    if(url.includes('google.com/maps') || url.includes('share.google')) return;
+    // Skip all Google Maps links — they don't return useful photos
+    if(url.includes('google.com/maps') || url.includes('share.google') || url.includes('maps.app.goo.gl') || url.includes('goo.gl/maps')) return;
 
     if(imgCache[id]){ setCardImg(ph, imgCache[id]); return; }
     if(imgCache[id] === null) return; // known empty
@@ -393,13 +393,19 @@ function setCardImg(ph, src){
 }
 // ───────────────────────────────────────────────────────────
 
+function isGoogleMapsLink(url){
+  if(!url) return false;
+  return url.includes('google.com/maps') || url.includes('maps.app.goo.gl') || url.includes('share.google') || url.includes('goo.gl/maps');
+}
+
 function cardHTML(p){
   const c = CATS[p.cat] || {emoji:'📍',label:p.cat||'Other'};
   const maps = p.lat
     ? `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((p.name||'')+', Lisbon')}`;
+  const showImg = p.image_url && !isGoogleMapsLink(p.url);
   return `<article class="card" data-id="${esc(p.id)}" data-url="${esc(p.url||'')}">
-    ${p.image_url
+    ${showImg
       ? `<img class="card-img" src="${esc(p.image_url)}" alt="" loading="lazy" onerror="this.style.display='none'">`
       : `<div class="card-img-placeholder">${c.emoji}</div>`}
     <div class="card-body">
@@ -574,6 +580,33 @@ async function fetchMeta(url){
     $('#preview-img').style.display='none';
     if(!$('#inp-name').value && gmaps.name) $('#inp-name').value=gmaps.name;
     validateForm();
+    return;
+  }
+
+  // Any Google Maps link without extractable coords — get name via Microlink but never store the map screenshot
+  const isAnyGoogleMaps = url.includes('google.com/maps') || url.includes('maps.app.goo.gl') || url.includes('share.google') || url.includes('goo.gl/maps');
+  if(isAnyGoogleMaps){
+    $('#preview-box').classList.add('show');
+    $('#preview-loading').style.display='block';
+    $('#preview-loading').textContent='Fetching place name…';
+    $('#preview-img').style.display='none';
+    $('#preview-body').style.display='none';
+    try{
+      const r = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}&palette=false`);
+      const d = await r.json();
+      if(d.status!=='success') throw new Error('no data');
+      const rawName = d.data?.title||'';
+      const cleanName = rawName.replace(/\s*[-–|]\s*google maps.*/i,'').replace(/\s*\(google maps\).*/i,'').trim();
+      fetchedMeta = { name:cleanName, desc:'', image:'' };
+      $('#preview-name').textContent = cleanName || 'Google Maps place';
+      $('#preview-desc').textContent = '📍 Name extracted — coordinates will be looked up on submit';
+      $('#preview-body').style.display='block';
+      $('#preview-loading').style.display='none';
+      if(!$('#inp-name').value && cleanName) $('#inp-name').value=cleanName;
+      validateForm();
+    }catch(e){
+      $('#preview-loading').textContent='Could not fetch details — fill in the name below.';
+    }
     return;
   }
 
