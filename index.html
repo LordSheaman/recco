@@ -551,18 +551,18 @@ $('#inp-url').addEventListener('input',e=>{
 });
 
 function parseGoogleMapsUrl(url){
-  // Extract coordinates from /@LAT,LNG
   const coord = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
-  // Extract place name from /place/NAME or /search/NAME
   const place = url.match(/\/maps\/(?:place|search)\/([^/@?]+)/);
-  if(!coord) return null;
-  let name = '';
+  if(!place && !coord) return null;
+  let name = '', geocodeQuery = '';
   if(place){
-    name = decodeURIComponent(place[1].replace(/\+/g,' '))
-      .replace(/[\s,+]+lisbon.*/i,'').trim();
+    const decoded = decodeURIComponent(place[1].replace(/\+/g,' ')).trim();
+    geocodeQuery = decoded; // full address string (e.g. "Bonjardim, Tv. de Santo Antão 11, Lisboa")
+    name = decoded.split(',')[0].trim();
     name = name.split(/\s+/).map(w=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(' ');
   }
-  return { name, lat:parseFloat(coord[1]), lng:parseFloat(coord[2]), isGoogleMaps:true };
+  if(!coord) return { name, geocodeQuery, lat:null, lng:null, isGoogleMaps:true };
+  return { name, geocodeQuery, lat:parseFloat(coord[1]), lng:parseFloat(coord[2]), isGoogleMaps:true };
 }
 
 async function fetchMeta(url){
@@ -570,8 +570,8 @@ async function fetchMeta(url){
 
   // Google Maps — extract coords & name directly, no Microlink needed
   const gmaps = parseGoogleMapsUrl(url);
-  if(gmaps){
-    fetchedMeta = { name:gmaps.name, desc:'', image:'', lat:gmaps.lat, lng:gmaps.lng };
+  if(gmaps && gmaps.lat !== null){
+    fetchedMeta = { name:gmaps.name, desc:'', image:'', lat:gmaps.lat, lng:gmaps.lng, geocodeQuery:gmaps.geocodeQuery };
     $('#preview-box').classList.add('show');
     $('#preview-loading').style.display='none';
     $('#preview-name').textContent = gmaps.name || 'Place found on Google Maps';
@@ -583,9 +583,11 @@ async function fetchMeta(url){
     return;
   }
 
-  // Any Google Maps link without extractable coords — get name via Microlink but never store the map screenshot
+  // Any Google Maps link (no coords in URL) — get name, no image, geocode from address on submit
   const isAnyGoogleMaps = url.includes('google.com/maps') || url.includes('maps.app.goo.gl') || url.includes('share.google') || url.includes('goo.gl/maps');
   if(isAnyGoogleMaps){
+    // If URL had a place path, we already have name + address for geocoding
+    const preExtracted = gmaps && gmaps.name;
     $('#preview-box').classList.add('show');
     $('#preview-loading').style.display='block';
     $('#preview-loading').textContent='Fetching place name…';
@@ -597,14 +599,20 @@ async function fetchMeta(url){
       if(d.status!=='success') throw new Error('no data');
       const rawName = d.data?.title||'';
       const cleanName = rawName.replace(/\s*[-–|]\s*google maps.*/i,'').replace(/\s*\(google maps\).*/i,'').trim();
-      fetchedMeta = { name:cleanName, desc:'', image:'' };
-      $('#preview-name').textContent = cleanName || 'Google Maps place';
-      $('#preview-desc').textContent = '📍 Name extracted — coordinates will be looked up on submit';
+      const finalName = preExtracted ? gmaps.name : cleanName;
+      fetchedMeta = { name:finalName, desc:'', image:'', geocodeQuery: gmaps?.geocodeQuery || finalName };
+      $('#preview-name').textContent = finalName || 'Google Maps place';
+      $('#preview-desc').textContent = '📍 Pin will be placed automatically on submit';
       $('#preview-body').style.display='block';
       $('#preview-loading').style.display='none';
-      if(!$('#inp-name').value && cleanName) $('#inp-name').value=cleanName;
+      if(!$('#inp-name').value && finalName) $('#inp-name').value=finalName;
       validateForm();
     }catch(e){
+      if(preExtracted){
+        fetchedMeta = { name:gmaps.name, desc:'', image:'', geocodeQuery:gmaps.geocodeQuery||gmaps.name };
+        if(!$('#inp-name').value) $('#inp-name').value=gmaps.name;
+        validateForm();
+      }
       $('#preview-loading').textContent='Could not fetch details — fill in the name below.';
     }
     return;
@@ -640,15 +648,24 @@ async function fetchMeta(url){
   }
 }
 
-// Geocode via Nominatim
-async function geocode(name, area){
-  const q = `${name}${area?', '+area:''}, Lisbon, Portugal`;
+// Geocode — Nominatim (Portugal-restricted) with Photon fallback
+async function geocode(query){
+  const q = /lisbon|lisboa|portugal/i.test(query) ? query : `${query}, Lisbon, Portugal`;
+  // 1. Nominatim restricted to Portugal
   try{
-    const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`,{
-      headers:{'User-Agent':'Recco-Lisbon-App/1.0'}
-    });
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=pt`,
+      {headers:{'User-Agent':'Recco-Lisbon-App/1.0'}}
+    );
     const d = await r.json();
     if(d.length) return {lat:parseFloat(d[0].lat),lng:parseFloat(d[0].lon)};
+  }catch(e){}
+  // 2. Photon — better POI search on OSM data
+  try{
+    const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query+' Lisbon')}&limit=5&lang=en`);
+    const d = await r.json();
+    const pt = d.features?.filter(f=>f.properties?.country==='Portugal');
+    if(pt?.length) return {lat:pt[0].geometry.coordinates[1],lng:pt[0].geometry.coordinates[0]};
   }catch(e){}
   return null;
 }
@@ -672,9 +689,10 @@ async function submitRec(){
   $('#btn-submit').textContent='Adding…';
   status('','');
 
+  const geocodeQuery = fetchedMeta.geocodeQuery || name;
   const coords = (fetchedMeta.lat && fetchedMeta.lng)
     ? {lat:fetchedMeta.lat, lng:fetchedMeta.lng}
-    : await geocode(name, area);
+    : await geocode(geocodeQuery);
 
   const row={
     name,
