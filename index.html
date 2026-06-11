@@ -318,12 +318,52 @@ function applyFilters(){
   );
 }
 
+// ── Image lazy loader ──────────────────────────────────────
+let imgCache = {};
+try { imgCache = JSON.parse(localStorage.getItem('recco-imgs') || '{}'); } catch(e) {}
+function saveImgCache(){ try{ localStorage.setItem('recco-imgs', JSON.stringify(imgCache)); }catch(e){} }
+
+function lazyLoadImages(){
+  $$('.card[data-id]').forEach(card=>{
+    if(card.querySelector('.card-img')) return; // already has real image
+    const ph = card.querySelector('.card-img-placeholder');
+    if(!ph) return;
+    const id = card.dataset.id;
+    const url = card.dataset.url;
+    if(!url) return;
+    // Skip Google Maps links — they don't return useful photos
+    if(url.includes('google.com/maps') || url.includes('share.google')) return;
+
+    if(imgCache[id]){ setCardImg(ph, imgCache[id]); return; }
+    if(imgCache[id] === null) return; // known empty
+
+    fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`)
+      .then(r=>r.json())
+      .then(d=>{
+        const img = d.data?.image?.url || d.data?.logo?.url || '';
+        imgCache[id] = img || null;
+        saveImgCache();
+        if(img) setCardImg(ph, img);
+      })
+      .catch(()=>{ imgCache[id]=null; saveImgCache(); });
+  });
+}
+
+function setCardImg(ph, src){
+  const img = document.createElement('img');
+  img.className = 'card-img'; img.alt = ''; img.loading = 'lazy';
+  img.onerror = ()=>img.remove();
+  img.src = src;
+  ph.replaceWith(img);
+}
+// ───────────────────────────────────────────────────────────
+
 function cardHTML(p){
   const c = CATS[p.cat] || {emoji:'📍',label:p.cat||'Other'};
   const maps = p.lat
     ? `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((p.name||'')+', Lisbon')}`;
-  return `<article class="card">
+  return `<article class="card" data-id="${esc(p.id)}" data-url="${esc(p.url||'')}">
     ${p.image_url
       ? `<img class="card-img" src="${esc(p.image_url)}" alt="" loading="lazy" onerror="this.style.display='none'">`
       : `<div class="card-img-placeholder">${c.emoji}</div>`}
@@ -350,6 +390,7 @@ function render(){
   $('#cards').innerHTML = filtered.length
     ? filtered.map(cardHTML).join('')
     : `<div class="empty">No recs here yet${filterState.q||filterState.cat!=='all'?' — try clearing filters':' — add the first one!'}.</div>`;
+  lazyLoadImages();
   if(mapMode) renderMap(filtered);
 }
 
