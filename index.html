@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="Recco — Lisbon recommendations from people who know.">
 <meta name="theme-color" content="#1f56a3">
-<title>Recco · Lisbon</title>
+<title>Miradouro · Lisbon</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9F%A3%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -138,7 +138,7 @@
 <body>
 
 <header>
-  <h1>Recco</h1>
+  <h1>Miradouro</h1>
   <div class="sub">Lisbon · recommended by people who know</div>
 </header>
 
@@ -411,7 +411,7 @@ function renderMap(list){
   list.forEach(p=>{
     if(p.lat==null||p.lng==null) return;
     const c=CATS[p.cat]||{emoji:'📍'};
-    const icon=L.divIcon({className:'',html:`<div style="font-size:24px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))">${c.emoji}</div>`,iconSize:[32,32],iconAnchor:[16,16]});
+    const icon=L.divIcon({className:'',html:`<div style="font-size:26px;line-height:1;text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 2px 4px rgba(0,0,0,.4)">${c.emoji}</div>`,iconSize:[32,32],iconAnchor:[16,16]});
     const popup=`<b>${esc(p.name)}</b>${p.area?`<br><small>${esc(p.area)}</small>`:''}${p.note?`<br>${esc(p.note)}`:''}${p.image_url?`<br><img src="${esc(p.image_url)}" alt="">`:''}${p.submitted_by?`<br><i>via ${esc(p.submitted_by)}</i>`:''}`;
     L.marker([p.lat,p.lng],{icon}).addTo(markerLayer).bindPopup(popup);
     pts.push([p.lat,p.lng]);
