@@ -451,12 +451,15 @@ function isGoogleMapsLink(url){
   return url.includes('google.com/maps') || url.includes('maps.app.goo.gl') || url.includes('share.google') || url.includes('goo.gl/maps');
 }
 
+function urlHost(url){ try{ return new URL(url).hostname; }catch(_){ return ''; } }
+
 function cardHTML(p){
   const c = CATS[p.cat] || {emoji:'📍',label:p.cat||'Other'};
   const maps = p.lat
     ? `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((p.name||'')+', Lisbon')}`;
   const showImg = p.image_url && !isGoogleMapsLink(p.url);
+  const host = p.url ? urlHost(p.url) : '';
   return `<article class="card" data-id="${esc(p.id)}" data-url="${esc(p.url||'')}">
     ${showImg
       ? `<img class="card-img" src="${esc(p.image_url)}" alt="" loading="lazy" onerror="this.style.display='none'">`
@@ -468,7 +471,7 @@ function cardHTML(p){
       </div>
       <div class="card-meta">${esc(p.area||'')}${p.area&&c.label?' · ':''}${esc(c.label)}</div>
       ${p.note ? `<p class="card-note">${esc(p.note)}</p>` : ''}
-      ${p.url  ? `<a class="card-url" href="${esc(p.url)}" target="_blank" rel="noopener">🔗 ${esc(new URL(p.url).hostname)}</a>` : ''}
+      ${host ? `<a class="card-url" href="${esc(p.url)}" target="_blank" rel="noopener">🔗 ${esc(host)}</a>` : ''}
       <div class="card-foot">
         <span class="card-via">${p.submitted_by ? `via ${esc(p.submitted_by)}` : ''}</span>
         <a class="map-link" href="${maps}" target="_blank" rel="noopener">map ↗</a>
@@ -479,7 +482,8 @@ function cardHTML(p){
 
 function listItemHTML(p){
   const c = CATS[p.cat] || {emoji:'📍', label:p.cat||'Other'};
-  const href = p.url || (p.lat
+  const validUrl = p.url && urlHost(p.url) ? p.url : null;
+  const href = validUrl || (p.lat
     ? `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name+', Lisbon')}`);
   const meta = [c.label, p.area, p.submitted_by ? `via ${p.submitted_by}` : ''].filter(Boolean).join(' · ');
