@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Vidiprinter — Live Football Scores</title>
+  <meta name="description" content="Real-time football score updates in classic vidiprinter format">
+  <meta name="theme-color" content="#080500">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --amber:     #ffb300;
+      --amber-dim: #7a5400;
+      --amber-bg:  #1a1000;
+      --green:     #39ff14;
+      --red:       #ff3b30;
+      --blue:      #4fc3f7;
+      --bg:        #080500;
+      --bg2:       #0d0900;
+      --border:    #2a1e00;
+      --text-dim:  #6b4d00;
+      --mono: 'Share Tech Mono', 'Courier New', 'Lucida Console', monospace;
+    }
+
+    html, body { height: 100%; overflow: hidden; }
+
+    body {
+      background: var(--bg);
+      color: var(--amber);
+      font-family: var(--mono);
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* CRT scanlines */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent 0px,
+        transparent 3px,
+        rgba(0,0,0,0.07) 3px,
+        rgba(0,0,0,0.07) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* CRT vignette */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.5) 100%);
+      pointer-events: none;
+      z-index: 9998;
+    }
+
+    /* ── HEADER ─────────────────────────────────────────────── */
+
+    .hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .hdr-logo {
+      font-size: 18px;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+      color: var(--amber);
+      line-height: 1;
+    }
+
+    .hdr-sub {
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    .hdr-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 11px;
+    }
+
+    .live-badge {
+      display: none;
+      align-items: center;
+      gap: 5px;
+      color: var(--red);
+      letter-spacing: 2px;
+      font-size: 11px;
+    }
+
+    .live-badge.on { display: flex; }
+
+    .live-dot {
+      width: 7px; height: 7px;
+      background: var(--red);
+      border-radius: 50%;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.25} }
+
+    #clock { color: var(--text-dim); letter-spacing: 1px; font-size: 11px; }
+
+    /* ── CONTROLS ────────────────────────────────────────────── */
+
+    .ctrl {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      padding: 4px 9px;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn:hover { border-color: var(--amber); color: var(--amber); }
+
+    .btn.on {
+      background: var(--amber-bg);
+      border-color: var(--amber);
+      color: var(--amber);
+    }
+
+    #status {
+      margin-left: auto;
+      font-size: 10px;
+      letter-spacing: 1px;
+      color: var(--text-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 260px;
+    }
+
+    /* ── SCORES STRIP (mobile top / desktop hidden) ────────── */
+
+    .scores-strip {
+      display: none;
+      overflow-x: auto;
+      overflow-y: hidden;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .scores-strip::-webkit-scrollbar { display: none; }
+
+    .scores-strip-inner {
+      display: flex;
+      gap: 0;
+      white-space: nowrap;
+    }
+
+    .strip-match {
+      display: flex;
+      flex-direction: column;
+      padding: 6px 12px;
+      border-right: 1px solid var(--border);
+      min-width: 120px;
+      flex-shrink: 0;
+    }
+
+    .strip-comp { font-size: 9px; color: var(--text-dim); letter-spacing: 1px; margin-bottom: 2px; }
+
+    .strip-score-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+    }
+
+    .strip-team { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+    .strip-score { color: var(--green); font-size: 13px; flex-shrink: 0; }
+    .strip-min { font-size: 9px; color: var(--text-dim); margin-top: 1px; }
+    .strip-min.live-min { color: var(--red); }
+
+    /* ── MAIN ────────────────────────────────────────────────── */
+
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── SCOREBOARD SIDEBAR ──────────────────────────────────── */
+
+    .sidebar {
+      width: 270px;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .panel-title {
+      padding: 7px 12px;
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    #sb-list { overflow-y: auto; flex: 1; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+
+    #sb-list::-webkit-scrollbar { width: 3px; }
+    #sb-list::-webkit-scrollbar-thumb { background: var(--border); }
+
+    .sb-match {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+    }
+
+    .sb-match:hover { background: var(--bg2); }
+
+    .sb-comp { font-size: 9px; color: var(--text-dim); letter-spacing: 1px; margin-bottom: 4px; text-transform: uppercase; }
+
+    .sb-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .sb-team { flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sb-team.home { text-align: left; }
+    .sb-team.away { text-align: right; }
+
+    .sb-score {
+      color: var(--green);
+      font-size: 15px;
+      letter-spacing: 2px;
+      flex-shrink: 0;
+      min-width: 36px;
+      text-align: center;
+    }
+
+    .sb-min { font-size: 9px; color: var(--text-dim); text-align: center; margin-top: 3px; letter-spacing: 1px; }
+    .sb-min.live-min { color: var(--red); }
+
+    .sb-empty {
+      padding: 20px 12px;
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 1px;
+      text-align: center;
+      line-height: 2;
+    }
+
+    /* goal flash animation */
+    @keyframes flashGoal {
+      0%   { background: rgba(57, 255, 20, 0.2); }
+      100% { background: transparent; }
+    }
+
+    .sb-match.flash { animation: flashGoal 0.8s ease-out; }
+
+    /* ── FEED PANEL ──────────────────────────────────────────── */
+
+    .feed-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    #feed {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 14px 12px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    #feed::-webkit-scrollbar { width: 3px; }
+    #feed::-webkit-scrollbar-thumb { background: var(--border); }
+
+    .entry {
+      display: grid;
+      grid-template-columns: 42px 14px 1fr;
+      gap: 8px;
+      align-items: baseline;
+      padding: 2px 0;
+      min-height: 22px;
+    }
+
+    .e-time { font-size: 10px; color: var(--text-dim); letter-spacing: 1px; }
+    .e-icon { font-size: 12px; }
+    .e-text { white-space: pre-wrap; word-break: break-word; line-height: 1.55; }
+
+    /* Type-specific colours */
+    .entry.goal .e-icon  { color: var(--green); }
+    .entry.goal .e-text  { color: var(--amber); }
+
+    .entry.owngoal .e-icon { color: var(--red); }
+    .entry.owngoal .e-text { color: var(--amber); }
+
+    .entry.kickoff .e-icon  { color: var(--blue); }
+    .entry.kickoff .e-text  { color: var(--blue); }
+
+    .entry.halftime .e-icon { color: var(--amber-dim); }
+    .entry.halftime .e-text { color: var(--amber-dim); }
+
+    .entry.fulltime .e-icon { color: var(--amber); }
+    .entry.fulltime .e-text { color: var(--amber); letter-spacing: 1px; }
+
+    .entry.system .e-icon   { color: var(--text-dim); }
+    .entry.system .e-text   { color: var(--text-dim); font-size: 11px; }
+
+    .entry.redcard .e-icon  { color: var(--red); }
+    .entry.redcard .e-text  { color: var(--amber-dim); }
+
+    /* blinking cursor */
+    .cursor {
+      display: inline-block;
+      width: 7px; height: 13px;
+      background: var(--amber);
+      vertical-align: text-bottom;
+      animation: blink 1.1s step-end infinite;
+      margin-left: 1px;
+    }
+
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* ── SETUP MODAL ─────────────────────────────────────────── */
+
+    #modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(8,5,0,0.96);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 500;
+    }
+
+    #modal.hidden { display: none; }
+
+    .modal-box {
+      border: 1px solid var(--border);
+      padding: 28px;
+      max-width: 460px;
+      width: 92%;
+      background: var(--bg2);
+    }
+
+    .modal-title {
+      font-size: 14px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    .modal-desc {
+      font-size: 11px;
+      color: var(--text-dim);
+      line-height: 1.9;
+      margin-bottom: 20px;
+      letter-spacing: 0.3px;
+    }
+
+    .modal-desc a { color: var(--amber); text-decoration: none; }
+    .modal-desc a:hover { text-decoration: underline; }
+    .modal-desc strong { color: var(--amber-dim); }
+
+    .modal-input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-bottom: 1px solid var(--amber-dim);
+      color: var(--amber);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 10px;
+      margin-bottom: 16px;
+      outline: none;
+      letter-spacing: 2px;
+      transition: border-color 0.15s;
+    }
+
+    .modal-input:focus { border-color: var(--amber); }
+    .modal-input::placeholder { color: var(--text-dim); letter-spacing: 1px; }
+
+    .modal-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    .btn-primary {
+      background: var(--amber);
+      border: none;
+      color: var(--bg);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 2px;
+      padding: 9px 18px;
+      cursor: pointer;
+      text-transform: uppercase;
+      font-weight: bold;
+      transition: opacity 0.15s;
+    }
+
+    .btn-primary:hover { opacity: 0.85; }
+
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 2px;
+      padding: 9px 18px;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .btn-ghost:hover { border-color: var(--amber); color: var(--amber); }
+
+    /* ── RESPONSIVE ──────────────────────────────────────────── */
+
+    @media (max-width: 640px) {
+      .sidebar { display: none; }
+      .scores-strip { display: block; }
+      .hdr-logo { font-size: 15px; letter-spacing: 3px; }
+      #status { max-width: 120px; }
+    }
+
+    @media (max-width: 380px) {
+      .ctrl { gap: 5px; }
+      .btn { padding: 3px 7px; font-size: 9px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="hdr">
+  <div>
+    <div class="hdr-logo">Vidiprinter</div>
+    <div class="hdr-sub">Live Football Scores</div>
+  </div>
+  <div class="hdr-right">
+    <div class="live-badge" id="live-badge">
+      <div class="live-dot"></div>
+      <span>LIVE</span>
+    </div>
+    <span id="clock"></span>
+  </div>
+</header>
+
+<!-- CONTROLS -->
+<div class="ctrl">
+  <button class="btn" id="demo-btn" onclick="toggleDemo()">Demo</button>
+  <button class="btn" id="key-btn"  onclick="showModal()">⚙ API Key</button>
+  <button class="btn"               onclick="clearFeed()">Clear</button>
+  <span id="status">READY</span>
+</div>
+
+<!-- MOBILE SCORES STRIP -->
+<div class="scores-strip" id="scores-strip">
+  <div class="scores-strip-inner" id="strip-inner"></div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- SCOREBOARD SIDEBAR -->
+  <aside class="sidebar">
+    <div class="panel-title">■ Live Scores</div>
+    <div id="sb-list">
+      <div class="sb-empty" id="sb-empty">No live matches<br>at this time</div>
+    </div>
+  </aside>
+
+  <!-- FEED -->
+  <section class="feed-panel">
+    <div class="panel-title">▌ Updates</div>
+    <div id="feed"><span class="cursor"></span></div>
+  </section>
+
+</div>
+
+<!-- API KEY MODAL -->
+<div id="modal" class="hidden">
+  <div class="modal-box">
+    <div class="modal-title">Connect Live Data</div>
+    <div class="modal-desc">
+      Enter a free API key from
+      <a href="https://www.football-data.org" target="_blank" rel="noopener">football-data.org</a>
+      to receive live scores from the Premier League, Champions League, Bundesliga,
+      La Liga, and more.<br><br>
+      Registration is free. The free tier covers 10+ competitions with
+      live scores updated in near real-time.<br><br>
+      <strong>No key yet?</strong> Use Demo Mode to see the format in action.
+    </div>
+    <input
+      type="text"
+      id="key-input"
+      class="modal-input"
+      placeholder="Paste API key here"
+      autocomplete="off"
+      spellcheck="false"
+    >
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="saveKey()">Connect</button>
+      <button class="btn-ghost"   onclick="startDemo(); closeModal()">Demo Mode</button>
+      <button class="btn-ghost"   onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── Config ──────────────────────────────────────────────────────────────
+
+const API   = 'https://api.football-data.org/v4';
+const POLL_INTERVAL = 60_000; // 60 s — respect free-tier rate limit
+
+// ── State ────────────────────────────────────────────────────────────────
+
+const S = {
+  key:       localStorage.getItem('vp_key') || '',
+  demo:      false,
+  pollTimer: null,
+  demoTimer: null,
+  prevState: {},   // matchId → { home, away, goals[], status }
+  liveMap:   {},   // matchId → match obj (current)
+  booted:    false,
+};
+
+// ── Clock ────────────────────────────────────────────────────────────────
+
+function tick() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  document.getElementById('clock').textContent =
+    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`;
+}
+setInterval(tick, 1000);
+tick();
+
+// ── Feed ─────────────────────────────────────────────────────────────────
+
+const feedEl = document.getElementById('feed');
+
+const ICONS = {
+  goal:     '●',
+  owngoal:  '●',
+  kickoff:  '▶',
+  halftime: '—',
+  fulltime: '■',
+  redcard:  '▪',
+  system:   '·',
+};
+
+function nowUTC() {
+  const d = new Date();
+  return `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
+}
+
+function addEntry(type, text, animate = true) {
+  // Remove blinking cursor from feed while typing
+  const cur = feedEl.querySelector('.cursor');
+  if (cur) cur.remove();
+
+  const row = document.createElement('div');
+  row.className = `entry ${type}`;
+
+  const time = document.createElement('span');
+  time.className = 'e-time';
+  time.textContent = nowUTC();
+
+  const icon = document.createElement('span');
+  icon.className = 'e-icon';
+  icon.textContent = ICONS[type] || '·';
+
+  const txt = document.createElement('span');
+  txt.className = 'e-text';
+
+  row.append(time, icon, txt);
+  feedEl.appendChild(row);
+
+  // Re-add cursor
+  const newCur = document.createElement('span');
+  newCur.className = 'cursor';
+  feedEl.appendChild(newCur);
+
+  if (animate && text.length > 0) {
+    typewrite(txt, text);
+  } else {
+    txt.textContent = text;
+    scrollFeed();
+  }
+}
+
+function typewrite(el, text) {
+  const charMs = Math.max(12, Math.min(45, 1400 / text.length));
+  let i = 0;
+  const id = setInterval(() => {
+    i++;
+    el.textContent = text.slice(0, i);
+    scrollFeed();
+    if (i >= text.length) clearInterval(id);
+  }, charMs);
+}
+
+function scrollFeed() {
+  feedEl.scrollTop = feedEl.scrollHeight;
+}
+
+function clearFeed() {
+  feedEl.innerHTML = '<span class="cursor"></span>';
+}
+
+// Queue multiple entries with staggered delay so they print sequentially
+function queueEntries(entries) {
+  let delay = 0;
+  entries.forEach(e => {
+    setTimeout(() => addEntry(e.type, e.text), delay);
+    // Give enough time for the previous entry to type before starting next
+    const charMs = Math.max(12, Math.min(45, 1400 / Math.max(e.text.length, 1)));
+    delay += e.text.length * charMs + 200;
+  });
+}
+
+// ── Status / live badge ──────────────────────────────────────────────────
+
+function setStatus(msg) {
+  document.getElementById('status').textContent = msg;
+}
+
+function setLive(on) {
+  document.getElementById('live-badge').classList.toggle('on', on);
+}
+
+// ── Scoreboard + strip ───────────────────────────────────────────────────
+
+function renderScoreboard(matches) {
+  const list  = document.getElementById('sb-list');
+  const empty = document.getElementById('sb-empty');
+  const strip = document.getElementById('strip-inner');
+
+  if (!matches.length) {
+    list.innerHTML = '';
+    list.appendChild(Object.assign(document.createElement('div'), {
+      className: 'sb-empty', textContent: 'No live matches\nat this time'
+    }));
+    strip.innerHTML = '';
+    setLive(false);
+    return;
+  }
+
+  setLive(true);
+
+  // Desktop sidebar
+  list.innerHTML = matches.map(m => {
+    const hS  = m.score?.fullTime?.home ?? 0;
+    const aS  = m.score?.fullTime?.away ?? 0;
+    const min = m.minute ? `${m.minute}′` : '';
+    const ht  = m.status === 'PAUSED';
+    const ft  = m.status === 'FINISHED';
+    const minLabel = ft ? 'FT' : ht ? 'HT' : (min || '–');
+    const live     = m.status === 'IN_PLAY';
+    const comp     = m.competition?.code || abbrev(m.competition?.name || 'MATCH');
+    const home     = short(m.homeTeam);
+    const away     = short(m.awayTeam);
+
+    return `<div class="sb-match" id="sbm-${m.id}">
+      <div class="sb-comp">${esc(comp)}</div>
+      <div class="sb-row">
+        <div class="sb-team home">${esc(home)}</div>
+        <div class="sb-score">${hS}–${aS}</div>
+        <div class="sb-team away">${esc(away)}</div>
+      </div>
+      <div class="sb-min ${live ? 'live-min' : ''}">${esc(minLabel)}</div>
+    </div>`;
+  }).join('');
+
+  // Mobile strip
+  strip.innerHTML = matches.map(m => {
+    const hS = m.score?.fullTime?.home ?? 0;
+    const aS = m.score?.fullTime?.away ?? 0;
+    const min = m.minute ? `${m.minute}′` : '';
+    const ht  = m.status === 'PAUSED';
+    const ft  = m.status === 'FINISHED';
+    const minLabel = ft ? 'FT' : ht ? 'HT' : (min || '–');
+    const live = m.status === 'IN_PLAY';
+    const home = short(m.homeTeam);
+    const away = short(m.awayTeam);
+
+    return `<div class="strip-match">
+      <div class="strip-comp">${esc(abbrev(m.competition?.name || ''))}</div>
+      <div class="strip-score-row">
+        <div class="strip-team">${esc(home)}</div>
+        <div class="strip-score">${hS}–${aS}</div>
+        <div class="strip-team" style="text-align:right">${esc(away)}</div>
+      </div>
+      <div class="strip-min ${live ? 'live-min' : ''}">${esc(minLabel)}</div>
+    </div>`;
+  }).join('');
+}
+
+function flashMatch(id) {
+  const el = document.getElementById(`sbm-${id}`);
+  if (!el) return;
+  el.classList.remove('flash');
+  void el.offsetWidth; // reflow to restart animation
+  el.classList.add('flash');
+}
+
+// ── Format helpers ───────────────────────────────────────────────────────
+
+function short(team) {
+  return team?.shortName || team?.tla || team?.name || '?';
+}
+
+function abbrev(name) {
+  const MAP = {
+    'Premier League':         'PL',
+    'Championship':           'CHAMP',
+    'UEFA Champions League':  'UCL',
+    'UEFA Europa League':     'UEL',
+    'UEFA Europa Conference League': 'UECL',
+    'Bundesliga':             'BL',
+    'Primera Division':       'LA LIGA',
+    'La Liga':                'LA LIGA',
+    'Serie A':                'SERIE A',
+    'Ligue 1':                'L1',
+    'Eredivisie':             'ERE',
+    'Primeira Liga':          'PPL',
+    'Brazilian Série A':      'BSA',
+    'FIFA World Cup':         'WC',
+    'European Championship':  'EUROS',
+  };
+  return MAP[name] || name.slice(0, 8).toUpperCase();
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+function minStr(goal) {
+  if (!goal?.minute) return '';
+  return goal.injuryTime
+    ? `${goal.minute}+${goal.injuryTime}′`
+    : `${goal.minute}′`;
+}
+
+function goalText(match, goal, hS, aS) {
+  const home  = short(match.homeTeam);
+  const away  = short(match.awayTeam);
+  const score = `${hS}–${aS}`;
+  const min   = minStr(goal);
+  const scorer = goal?.scorer?.name ? goal.scorer.name.toUpperCase() : '';
+  const teamN  = goal?.team?.shortName || goal?.team?.name || '';
+
+  let s = `${home}  ${score}  ${away}`;
+  if (min)    s += `   ${min}`;
+  if (scorer) s += `   ${scorer}`;
+  if (teamN)  s += `  (${teamN.toUpperCase()})`;
+  return s;
+}
+
+// ── API ──────────────────────────────────────────────────────────────────
+
+async function fetchLive() {
+  const r = await fetch(`${API}/matches?status=IN_PLAY,PAUSED`, {
+    headers: { 'X-Auth-Token': S.key },
+  });
+  if (r.status === 403) throw new Error('AUTH FAILED — check your API key');
+  if (r.status === 429) throw new Error('RATE LIMITED — slow down');
+  if (!r.ok)            throw new Error(`HTTP ${r.status}`);
+  const d = await r.json();
+  return d.matches || [];
+}
+
+async function poll() {
+  setStatus('FETCHING…');
+  try {
+    const matches = await fetchLive();
+    processUpdate(matches);
+
+    const cnt = matches.filter(m => m.status === 'IN_PLAY').length;
+    const now = nowUTC();
+    setStatus(`${now} UTC  ·  ${cnt} live`);
+  } catch (e) {
+    setStatus(`ERROR: ${e.message}`);
+    addEntry('system', `⚠  ${e.message}`, false);
+  }
+}
+
+function processUpdate(matches) {
+  const events = [];
+  const newMap = {};
+
+  for (const m of matches) {
+    const id = m.id;
+    newMap[id] = m;
+
+    const hS    = m.score?.fullTime?.home ?? 0;
+    const aS    = m.score?.fullTime?.away ?? 0;
+    const goals = m.goals || [];
+    const prev  = S.prevState[id];
+
+    if (!prev) {
+      // New match enters live feed
+      if (S.booted) {
+        const home = short(m.homeTeam);
+        const away = short(m.awayTeam);
+        const comp = abbrev(m.competition?.name || '');
+        events.push({ type: 'kickoff', text: `KICK OFF  ·  ${comp}  ·  ${home} vs ${away}` });
+      }
+    } else {
+      // Detect new goals by comparing goal arrays
+      const prevGoalCount = prev.goals.length;
+      if (goals.length > prevGoalCount) {
+        const newGoals = goals.slice(prevGoalCount);
+        for (const g of newGoals) {
+          const type = g.type === 'OWN_GOAL' ? 'owngoal' : 'goal';
+          events.push({ type, text: goalText(m, g, hS, aS), matchId: id });
+        }
+      } else if ((hS !== prev.home || aS !== prev.away) && goals.length === 0) {
+        // Score changed but no goal data available (rare) — report bare score
+        const home = short(m.homeTeam);
+        const away = short(m.awayTeam);
+        events.push({ type: 'goal', text: `${home}  ${hS}–${aS}  ${away}   GOAL`, matchId: id });
+      }
+
+      // Status transitions
+      if (prev.status !== m.status) {
+        const home  = short(m.homeTeam);
+        const away  = short(m.awayTeam);
+        const score = `${hS}–${aS}`;
+
+        if (m.status === 'PAUSED') {
+          events.push({ type: 'halftime', text: `HALF TIME   ${home}  ${score}  ${away}` });
+        } else if (m.status === 'IN_PLAY' && prev.status === 'PAUSED') {
+          events.push({ type: 'kickoff', text: `SECOND HALF   ${home}  ${score}  ${away}` });
+        } else if (m.status === 'FINISHED') {
+          events.push({ type: 'fulltime', text: `FULL TIME   ${home}  ${score}  ${away}` });
+        }
+      }
+    }
+
+    S.prevState[id] = { home: hS, away: aS, goals, status: m.status };
+  }
+
+  // Clean up matches that left the live feed
+  for (const id of Object.keys(S.prevState)) {
+    if (!newMap[id]) {
+      delete S.prevState[id];
+    }
+  }
+
+  S.liveMap = newMap;
+  S.booted  = true;
+
+  renderScoreboard(matches);
+
+  if (events.length) {
+    // Flash scoreboard rows for goals
+    events.forEach(e => { if (e.matchId) flashMatch(e.matchId); });
+    queueEntries(events);
+  }
+}
+
+function startPolling() {
+  stopPolling();
+  poll();
+  S.pollTimer = setInterval(poll, POLL_INTERVAL);
+}
+
+function stopPolling() {
+  if (S.pollTimer) { clearInterval(S.pollTimer); S.pollTimer = null; }
+}
+
+// ── Demo mode ────────────────────────────────────────────────────────────
+
+const DEMOS = [
+  { id: 'd1', comp: 'Premier League',        home: 'Arsenal',      homeShort: 'Arsenal',     away: 'Chelsea',       awayShort: 'Chelsea' },
+  { id: 'd2', comp: 'Premier League',        home: 'Liverpool',    homeShort: 'Liverpool',   away: 'Man City',      awayShort: 'Man City' },
+  { id: 'd3', comp: 'Premier League',        home: 'Man United',   homeShort: 'Man Utd',     away: 'Tottenham',     awayShort: 'Spurs' },
+  { id: 'd4', comp: 'UEFA Champions League', home: 'Real Madrid',  homeShort: 'Real Madrid', away: 'Bayern Munich', awayShort: 'Bayern' },
+  { id: 'd5', comp: 'Bundesliga',            home: 'B. Dortmund',  homeShort: 'Dortmund',    away: 'Leverkusen',    awayShort: 'Leverkusen' },
+];
+
+const DEMO_PLAYERS = {
+  'Arsenal':   ['Saka', 'Havertz', 'Ødegaard', 'Martinelli', 'Rice', 'Trossard'],
+  'Chelsea':   ['Palmer', 'Jackson', 'Nkunku', 'Mudryk', 'Caicedo', 'Gallagher'],
+  'Liverpool': ['Salah', 'Díaz', 'Gakpo', 'Núñez', 'Mac Allister', 'Szoboszlai'],
+  'Man City':  ['Haaland', 'De Bruyne', 'Foden', 'Silva', 'Doku', 'Gvardiol'],
+  'Man Utd':   ['Rashford', 'Fernandes', 'Højlund', 'Garnacho', 'Eriksen', 'Mount'],
+  'Spurs':     ['Son', 'Kulusevski', 'Maddison', 'Richarlison', 'Bentancur', 'Johnson'],
+  'Real Madrid': ['Vinícius Jr', 'Bellingham', 'Modrić', 'Rodrygo', 'Valverde', 'Mbappé'],
+  'Bayern':    ['Kane', 'Müller', 'Sané', 'Gnabry', 'Musiala', 'Kimmich'],
+  'Dortmund':  ['Fullkrug', 'Brandt', 'Adeyemi', 'Can', 'Reus', 'Sabitzer'],
+  'Leverkusen':['Wirtz', 'Grimaldo', 'Boniface', 'Hofmann', 'Tah', 'Xhaka'],
+};
+
+// Seeded PRNG for reproducible demo
+let rngSeed = 0;
+function rng() {
+  rngSeed = (rngSeed * 1664525 + 1013904223) >>> 0;
+  return rngSeed / 0xFFFFFFFF;
+}
+
+function demoRandPick(arr) {
+  return arr[Math.floor(rng() * arr.length)];
+}
+
+let demoScores = {};
+let demoMinute = 0;
+let demoPhaseKO = {};    // matchId → kicked off
+let demoPhaseHT = {};
+let demoPhase2 = {};
+let demoFT     = {};
+
+function initDemoState() {
+  rngSeed = 99;
+  demoScores   = {};
+  demoMinute   = 0;
+  demoPhaseKO  = {};
+  demoPhaseHT  = {};
+  demoPhase2   = {};
+  demoFT       = {};
+  DEMOS.forEach(m => { demoScores[m.id] = { home: 0, away: 0 }; });
+}
+
+function demoTick() {
+  demoMinute++;
+  const min = demoMinute;
+  const events = [];
+
+  DEMOS.forEach(m => {
+    const sc = demoScores[m.id];
+
+    // Kick off at minute 1
+    if (min === 1) {
+      events.push({ type: 'kickoff', text: `KICK OFF  ·  ${abbrev(m.comp)}  ·  ${m.homeShort} vs ${m.awayShort}` });
+      demoPhaseKO[m.id] = true;
+    }
+
+    // Half time at 45
+    if (min === 45 && !demoPhaseHT[m.id]) {
+      demoPhaseHT[m.id] = true;
+      events.push({ type: 'halftime', text: `HALF TIME   ${m.homeShort}  ${sc.home}–${sc.away}  ${m.awayShort}` });
+    }
+
+    // Second half at 46
+    if (min === 46 && !demoPhase2[m.id]) {
+      demoPhase2[m.id] = true;
+      events.push({ type: 'kickoff', text: `SECOND HALF   ${m.homeShort}  ${sc.home}–${sc.away}  ${m.awayShort}` });
+    }
+
+    // Full time at 90
+    if (min === 90 && !demoFT[m.id]) {
+      demoFT[m.id] = true;
+      events.push({ type: 'fulltime', text: `FULL TIME   ${m.homeShort}  ${sc.home}–${sc.away}  ${m.awayShort}` });
+    }
+
+    // Goal chance: ~2.5 goals per 90 min per match ≈ 2.8 % per minute
+    if (min >= 1 && min <= 90 && min !== 45 && rng() < 0.028) {
+      const isHome = rng() > 0.5;
+      const scorer = demoRandPick(DEMO_PLAYERS[isHome ? m.home : m.away] || ['Unknown']);
+      const teamShortN = isHome ? m.homeShort : m.awayShort;
+
+      if (isHome) sc.home++; else sc.away++;
+
+      const minStr = min <= 45 ? `${min}′` : min === 45 ? `45+${Math.ceil(rng()*3)}′` : `${min}′`;
+      events.push({
+        type: 'goal',
+        text: `${m.homeShort}  ${sc.home}–${sc.away}  ${m.awayShort}   ${minStr}   ${scorer.toUpperCase()}  (${teamShortN.toUpperCase()})`,
+      });
+    }
+  });
+
+  // Build fake match objects for scoreboard
+  const fakeMatches = DEMOS.map(m => {
+    const sc = demoScores[m.id];
+    const ft   = demoFT[m.id];
+    const ht   = demoPhaseHT[m.id] && !demoPhase2[m.id];
+    const live = !ft && !ht && demoPhaseKO[m.id];
+    return {
+      id: m.id,
+      competition: { name: m.comp, code: abbrev(m.comp) },
+      homeTeam: { shortName: m.homeShort, name: m.home },
+      awayTeam: { shortName: m.awayShort, name: m.away },
+      score: { fullTime: { home: sc.home, away: sc.away } },
+      minute: min > 45 && !ft ? min - 1 : Math.min(min, 45),
+      status: ft ? 'FINISHED' : ht ? 'PAUSED' : 'IN_PLAY',
+    };
+  }).filter(m => m.status !== 'FINISHED' || min <= 92);
+
+  renderScoreboard(fakeMatches);
+  if (events.length) queueEntries(events);
+
+  const live = fakeMatches.filter(m => m.status === 'IN_PLAY').length;
+  setStatus(`DEMO  ·  ${min}′  ·  ${live} live`);
+
+  if (min >= 92) { stopDemo(true); }
+}
+
+function toggleDemo() {
+  S.demo ? stopDemo(false) : startDemo();
+}
+
+function startDemo() {
+  stopPolling();
+  S.demo = true;
+  document.getElementById('demo-btn').classList.add('on');
+  document.getElementById('demo-btn').textContent = 'Demo ■';
+
+  clearFeed();
+  addEntry('system', 'DEMO MODE — Simulated Saturday afternoon', false);
+
+  initDemoState();
+
+  // Tick every 2 s (each tick = 1 match minute)
+  if (S.demoTimer) clearInterval(S.demoTimer);
+  S.demoTimer = setInterval(demoTick, 2000);
+  demoTick();
+}
+
+function stopDemo(finished) {
+  if (S.demoTimer) { clearInterval(S.demoTimer); S.demoTimer = null; }
+  S.demo = false;
+  document.getElementById('demo-btn').classList.remove('on');
+  document.getElementById('demo-btn').textContent = 'Demo';
+
+  if (!finished) {
+    setLive(false);
+    setStatus('DEMO STOPPED');
+    renderScoreboard([]);
+  } else {
+    setStatus('DEMO ENDED — press Demo to replay');
+    setLive(false);
+  }
+}
+
+// ── Modal ────────────────────────────────────────────────────────────────
+
+function showModal() {
+  document.getElementById('key-input').value = S.key;
+  document.getElementById('modal').classList.remove('hidden');
+  document.getElementById('key-input').focus();
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+}
+
+function saveKey() {
+  const k = document.getElementById('key-input').value.trim();
+  if (!k) { document.getElementById('key-input').focus(); return; }
+  S.key = k;
+  localStorage.setItem('vp_key', k);
+  closeModal();
+
+  if (S.demo) stopDemo(false);
+  S.booted    = false;
+  S.prevState = {};
+  S.liveMap   = {};
+
+  addEntry('system', 'API key saved — connecting to live data…', false);
+  startPolling();
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────
+
+(function init() {
+  addEntry('system', 'VIDIPRINTER  ·  Live Football Scores', false);
+
+  if (S.key) {
+    addEntry('system', 'API key found — fetching live matches…', false);
+    startPolling();
+  } else {
+    addEntry('system', 'Press  Demo  for a simulation, or  ⚙ API Key  to go live.', false);
+    setStatus('NO API KEY — DEMO AVAILABLE');
+    renderScoreboard([]);
+  }
+})();
+
+// ── Event listeners ──────────────────────────────────────────────────────
+
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal')) closeModal();
+});
+
+document.getElementById('key-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter')  saveKey();
+  if (e.key === 'Escape') closeModal();
+});
+</script>
+</body>
+</html>
